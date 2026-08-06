@@ -24,6 +24,7 @@ import com.jamesm92.micron2compose.parser.Block
 import com.jamesm92.micron2compose.parser.BlockKind
 import com.jamesm92.micron2compose.parser.ConvertResult
 import com.jamesm92.micron2compose.parser.LinkTarget
+import com.jamesm92.micron2compose.parser.PartialRun
 
 /**
  * The batteries-included Micron renderer: a `LazyColumn` of [Block]s, one
@@ -45,8 +46,14 @@ import com.jamesm92.micron2compose.parser.LinkTarget
  *   real monospace face (ideally one with full Braille/box-drawing glyph
  *   coverage — a generic system monospace font often doesn't have one)
  *   matters for correct alignment. Defaults to [FontFamily.Monospace].
+ * @param onFetchPartial When supplied, `BlockKind.PARTIAL` blocks render as
+ *   real live-refreshing content instead of the static "[live]" placeholder
+ *   — fetched once immediately and re-fetched on [LinkTarget.partialRefresh]
+ *   for as long as this page stays composed. The library has no networking
+ *   of its own; this is the host app's fetch hook. Left `null` (default),
+ *   partials render exactly as they did before this parameter existed.
  * @param onLinkClick Invoked with the resolved [LinkTarget] whenever a link
- *   or partial placeholder is tapped.
+ *   or (non-live) partial placeholder is tapped.
  */
 @Composable
 fun MicronPage(
@@ -59,6 +66,7 @@ fun MicronPage(
     blankLineHeight: Dp = 16.dp,
     fontFamily: FontFamily = FontFamily.Default,
     monospaceFontFamily: FontFamily = FontFamily.Monospace,
+    onFetchPartial: PartialFetcher? = null,
     onLinkClick: (LinkTarget) -> Unit = {},
 ) {
     LaunchedEffect(scrollToAnchor, result) {
@@ -77,6 +85,7 @@ fun MicronPage(
                 blankLineHeight = blankLineHeight,
                 fontFamily = fontFamily,
                 monospaceFontFamily = monospaceFontFamily,
+                onFetchPartial = onFetchPartial,
                 onLinkClick = onLinkClick,
             )
         }
@@ -89,7 +98,7 @@ fun MicronPage(
  * instead of a `LazyColumn` (e.g. mixing Micron blocks into a larger
  * `Column` alongside other app UI).
  *
- * See [MicronPage]'s docs for [fontFamily]/[monospaceFontFamily].
+ * See [MicronPage]'s docs for [fontFamily]/[monospaceFontFamily]/[onFetchPartial].
  */
 @Composable
 fun MicronBlock(
@@ -100,6 +109,7 @@ fun MicronBlock(
     blankLineHeight: Dp = 16.dp,
     fontFamily: FontFamily = FontFamily.Default,
     monospaceFontFamily: FontFamily = FontFamily.Monospace,
+    onFetchPartial: PartialFetcher? = null,
     onLinkClick: (LinkTarget) -> Unit = {},
 ) {
     if (block.kind == BlockKind.BLANK) {
@@ -127,6 +137,26 @@ fun MicronBlock(
         return
     }
 
+    if (block.kind == BlockKind.PARTIAL && onFetchPartial != null) {
+        val target = (block.runs.first() as PartialRun).target
+        MicronLivePartial(
+            target = target,
+            fetcher = onFetchPartial,
+            formState = formState,
+            readOnly = readOnly,
+            blankLineHeight = blankLineHeight,
+            fontFamily = fontFamily,
+            monospaceFontFamily = monospaceFontFamily,
+            onLinkClick = onLinkClick,
+            modifier = modifier.fillMaxWidth().padding(start = indentPadding),
+        )
+        return
+    }
+
+    // Static path — also handles BlockKind.PARTIAL when no onFetchPartial
+    // is supplied, rendering the plain clickable "[live]" placeholder
+    // exactly as before this parameter existed (see MicronText.kt's
+    // PartialRun handling).
     val content = rememberMicronBlockContent(block, readOnly, formState, onLinkClick)
     val monospace = block.kind == BlockKind.TABLE || block.kind == BlockKind.LITERAL
 

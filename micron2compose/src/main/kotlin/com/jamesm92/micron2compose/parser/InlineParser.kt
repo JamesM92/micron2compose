@@ -204,57 +204,17 @@ internal fun parseInline(
                     }
                 }
 
-                // Partial (`{URL`refresh`fields}) — data-only placeholder,
-                // no live re-fetching (see PartialRun/LinkTarget docs).
-                '{' -> {
-                    val end = text.indexOf('}', i + 1)
-                    if (end != -1) {
-                        val dynInner = text.substring(i + 1, end)
-                        val dynParts = dynInner.split("`")
-                        val dynUrl = dynParts.getOrElse(0) { "" }.trim()
-                        val href = urlResolver(dynUrl, nodeHash, basePath)
-
-                        var refresh: Double? = null
-                        if (dynParts.size > 1) {
-                            val r = dynParts[1].toDoubleOrNull()
-                            if (r != null && r >= 1) refresh = r
-                        }
-
-                        var fieldsSpec: String? = null
-                        var pid: String? = null
-                        if (dynParts.size > 2 && dynParts[2].isNotEmpty()) {
-                            fieldsSpec = dynParts[2]
-                            for (f in fieldsSpec.split("|")) {
-                                if (f.startsWith("pid=")) {
-                                    pid = f.removePrefix("pid=")
-                                    break
-                                }
-                            }
-                        }
-
-                        flush()
-                        runs.add(
-                            PartialRun(
-                                LinkTarget(
-                                    url = href,
-                                    fieldSpec = fieldsSpec,
-                                    isPartial = true,
-                                    partialRefresh = refresh,
-                                    partialPid = pid,
-                                    kind = classifyLink(dynUrl, href),
-                                )
-                            )
-                        )
-                        i = end + 1
-                    } else {
-                        buffer.append("`{")
-                        i += 1
-                    }
-                }
-
                 // Unknown token — silently consume both the backtick and
                 // the unknown char, matching NomadNet. For a literal
                 // backtick, escape it: `\``.
+                //
+                // `{` (partials) falls here too, deliberately — verified
+                // against live upstream (MicronParser.py): a partial is
+                // recognized *only* as a whole-line-starting construct in
+                // parse_line (`line.startswith("`{")`), never inline via
+                // make_output's character dispatch (this function's
+                // equivalent), which has no case for it at all. See
+                // LineParser.kt's line-start partial detection.
                 else -> {
                     i += 1
                 }
@@ -373,4 +333,49 @@ private fun parseFieldSpec(fieldContent: String, fieldData: String): FieldSpec {
             defaultValue = fieldData,
         )
     }
+}
+
+/**
+ * Parses a partial's `URL`refresh`fields` inner content (the text between
+ * `` `{ `` and `}`, already extracted by the caller) into a [LinkTarget].
+ * Called only from [LineParser.kt]'s line-start `` `{ `` detection — see
+ * that file's docs and this file's "unknown token" comment for why a
+ * partial is never recognized mid-line.
+ */
+internal fun parsePartialTarget(
+    inner: String,
+    nodeHash: String,
+    basePath: String,
+    urlResolver: UrlResolver,
+): LinkTarget {
+    val parts = inner.split("`")
+    val rawUrl = parts.getOrElse(0) { "" }.trim()
+    val href = urlResolver(rawUrl, nodeHash, basePath)
+
+    var refresh: Double? = null
+    if (parts.size > 1) {
+        val r = parts[1].toDoubleOrNull()
+        if (r != null && r >= 1) refresh = r
+    }
+
+    var fieldsSpec: String? = null
+    var pid: String? = null
+    if (parts.size > 2 && parts[2].isNotEmpty()) {
+        fieldsSpec = parts[2]
+        for (f in fieldsSpec.split("|")) {
+            if (f.startsWith("pid=")) {
+                pid = f.removePrefix("pid=")
+                break
+            }
+        }
+    }
+
+    return LinkTarget(
+        url = href,
+        fieldSpec = fieldsSpec,
+        isPartial = true,
+        partialRefresh = refresh,
+        partialPid = pid,
+        kind = classifyLink(rawUrl, href),
+    )
 }

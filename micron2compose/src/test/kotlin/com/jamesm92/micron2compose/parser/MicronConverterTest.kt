@@ -648,8 +648,9 @@ class MicronConverterTest {
 
     @Test
     fun `partial exposes resolved url and refresh metadata`() {
-        val partial = conv.convert("`{hash:/abcdef/status.mu`5}").blocks.single().runs
-            .filterIsInstance<PartialRun>().single()
+        val block = conv.convert("`{hash:/abcdef/status.mu`5}").blocks.single()
+        assertEquals(BlockKind.PARTIAL, block.kind)
+        val partial = block.runs.filterIsInstance<PartialRun>().single()
         assertTrue(partial.target.isPartial)
         assertEquals("hash://abcdef/status.mu", partial.target.url)
         assertEquals(5.0, partial.target.partialRefresh)
@@ -672,10 +673,29 @@ class MicronConverterTest {
     }
 
     @Test
-    fun `partial unclosed renders literal brace as text`() {
+    fun `partial unclosed falls through to ordinary text, not lost entirely`() {
+        // Deliberate deviation from upstream (which produces nothing at
+        // all for this case) for page-editor live-preview robustness — see
+        // LineParser.kt's comment. The unrecognized "`{" pair is consumed
+        // silently like any other unknown token (no special-cased literal
+        // brace), but the rest of the line's text is never lost.
         val block = conv.convert("`{hash:/abcdef/status.mu").blocks.single()
+        assertEquals(BlockKind.TEXT, block.kind)
         assertTrue(block.runs.filterIsInstance<PartialRun>().isEmpty())
-        assertTrue(block.plainText().contains("{"))
+        assertTrue(block.plainText().contains("hash:/abcdef/status.mu"))
+    }
+
+    @Test
+    fun `partial only recognized at the start of a line, not mid-line`() {
+        // Verified against live upstream: make_output's character
+        // dispatch has no case for `{` at all - a partial is only ever a
+        // whole-line-starting construct. Text before it means it's not
+        // recognized as a partial - the "`{" pair is just an unknown
+        // token, consumed silently, same as the unclosed case above.
+        val block = conv.convert("See status: `{hash:/abcdef/status.mu`5}").blocks.single()
+        assertEquals(BlockKind.TEXT, block.kind)
+        assertTrue(block.runs.filterIsInstance<PartialRun>().isEmpty())
+        assertTrue(block.plainText().contains("See status:"))
     }
 
     // -----------------------------------------------------------------

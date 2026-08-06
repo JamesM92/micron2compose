@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/), and this pro
 
 ### Added
 
+- **Real live-refreshing partials.** `MicronPage`/`MicronBlock` take an optional `onFetchPartial: suspend (LinkTarget) -> String` — when supplied, a `` `{...} `` partial fetches once immediately and re-fetches on `LinkTarget.partialRefresh` for as long as it stays composed, rendering the fetched Micron content in place (recursively, so nested partials/fields/tables just work). Left unset, partials render exactly as before (static "[live]" placeholder). The library still has no networking of its own — this is a fetch hook, not a built-in client.
+- `` `{...} `` partials are now always their own block (`BlockKind.PARTIAL`), matching a real-upstream finding: NomadNet only ever recognizes a partial as a whole-line-starting construct, never inline mixed with other text.
 - `LinkTarget.kind: LinkKind` (`INTERNAL_PAGE`/`EXTERNAL_WEB`/`ANCHOR`/`FILE_DOWNLOAD`), so a host app's link-activation-safety branching (e.g. warn before an external web link) doesn't need to prefix-sniff `url` itself. `isFileDownload` is unchanged and now equivalent to `kind == LinkKind.FILE_DOWNLOAD`.
 
 ### Fixed

@@ -231,7 +231,16 @@ Every heading also becomes an anchor automatically, slugified from its text (`` 
 `{URL`refresh`field1|field2|pid=x}    With request fields; `pid=` targets a specific partial
 ```
 
-Real NomadNet partials asynchronously load and periodically re-fetch a page fragment in place. This library renders a plain clickable "[live]" placeholder instead — matching the data-only approach `Micron2HTML`/`micron2kivy` already take — but the `refresh`/`fields`/`pid` data isn't discarded: it's on `LinkTarget`, delivered through the same `onLinkClick` callback as an ordinary link, for a host app to build its own live-refresh behavior on top of if it wants one.
+Real NomadNet partials asynchronously load and periodically re-fetch a page fragment in place. This library has no networking of its own, so pass `onFetchPartial` to `MicronPage`/`MicronBlock` — a `suspend (LinkTarget) -> String` that fetches the raw Micron text for a partial's target — and it renders real, live-refreshing content: fetched once immediately, then re-fetched on `LinkTarget.partialRefresh` for as long as the page stays composed.
+
+```kotlin
+MicronPage(
+    result = result,
+    onFetchPartial = { target -> myNodeClient.fetchPage(target.url) },
+)
+```
+
+A `` `{...} `` is always its own block — matching real NomadNet, which only recognizes it as a whole-line-starting construct, never inline mixed with other text. Leave `onFetchPartial` unset (the default) and partials render as a plain clickable "[live]" placeholder instead, same as `Micron2HTML`/`micron2kivy`'s data-only approach — the `refresh`/`fields`/`pid` data is still on `LinkTarget` either way, via the `onLinkClick` callback.
 
 ### Literal blocks
 
@@ -275,7 +284,7 @@ The backtick before the closing `>` is mandatory for every field type — `` `<?
 
 This library's stated goal is full parity with the real NomadNet viewer — the items below are open gaps toward that, not a permanent ceiling.
 
-- **Partials render as a static, clickable placeholder only** — no automatic live re-fetching (the metadata is exposed on `LinkTarget` for a host app to build that on top). See [Partials](#partials).
+- **Partials only live-refresh when a host app supplies `onFetchPartial`** — this library has no networking of its own, so without a fetcher they still render as a static, clickable placeholder (metadata exposed on `LinkTarget`). See [Partials](#partials).
 - **Table wide-character width uses a built-in East Asian Width approximation, not a full `wcwidth` port** — the common CJK/Fullwidth Unicode ranges are measured as double-width, matching real NomadNet's own `wcwidth`-based measurement for the vast majority of real content, but "Ambiguous"-width characters and some rarer combining-mark cases aren't specially handled.
 - **The table width-shrink algorithm is ported from NomadNet's real implementation** (`RNS/Utilities/rngit/util.py`'s `format_table_raw`, fetched and verified against live upstream source — not approximated): sort columns widest-first, drain each down to the 3-character minimum before moving to the next, until the table fits.
 - **Dividers render at a fixed repeated-character width** clipped to the available layout width, rather than anything terminal-width-aware — there's no meaningful "terminal width" concept in a Compose layout.

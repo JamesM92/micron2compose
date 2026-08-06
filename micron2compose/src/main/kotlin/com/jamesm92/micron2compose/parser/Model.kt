@@ -32,12 +32,16 @@ data class LinkRun(
 ) : InlineRun
 
 /**
- * A `` `{url`refresh`fields} `` partial. Per the data-only-placeholder
- * decision for this library (matching Micron2HTML/micron2kivy): this
- * renders as a plain clickable "[live]"-style link, never an automatic
- * re-fetch. `target` carries the refresh/fields/pid metadata for a
- * consuming app to build its own live-refresh behavior on top of, if it
- * wants one.
+ * A `` `{url`refresh`fields} `` partial — always the sole run of its own
+ * [Block] (`kind == BlockKind.PARTIAL`), never mixed inline with other
+ * text (see `BlockKind.PARTIAL`'s docs for why). `target` carries the
+ * resolved url plus refresh/fields/pid metadata.
+ *
+ * The parser layer only ever *parses* this — it has no networking of its
+ * own. The Compose emission layer (`MicronPage`/`MicronBlock`'s optional
+ * `onFetchPartial` callback) is what turns it into a real live-refreshing
+ * fetch, when a host app supplies one; without it, this renders as a
+ * plain clickable "[live]" placeholder, matching Micron2HTML/micron2kivy.
  */
 data class PartialRun(
     val target: LinkTarget,
@@ -133,7 +137,14 @@ data class FieldSpec(
     val preselected: Boolean = false,
 )
 
-enum class BlockKind { TEXT, HEADING, DIVIDER, LITERAL, TABLE, BLANK }
+/**
+ * PARTIAL is always a standalone block, one [PartialRun] as its sole run —
+ * matches real NomadNet, which only ever recognizes `` `{...} `` as a
+ * whole-line-starting construct, never inline mixed with other text (see
+ * `LineParser.kt`'s line-start detection and `InlineParser.kt`'s "unknown
+ * token" docs for the verification).
+ */
+enum class BlockKind { TEXT, HEADING, DIVIDER, LITERAL, TABLE, BLANK, PARTIAL }
 
 enum class Align { LEFT, CENTER, RIGHT }
 

@@ -243,6 +243,30 @@ internal fun processLine(
         return null
     }
 
+    // ---- Partial: a line starting with `{URL`refresh`fields} ----
+    // Verified against live upstream (MicronParser.py): a partial is
+    // recognized *only* as a whole-line-starting construct
+    // (`line.startswith("`{")`), never inline mixed with other text — see
+    // InlineParser.kt's "unknown token" docs for the other half of that
+    // verification. Always its own Block, one PartialRun as its sole run.
+    if (workingLine.startsWith("`{")) {
+        val end = workingLine.indexOf('}', 2)
+        if (end != -1) {
+            val target = parsePartialTarget(workingLine.substring(2, end), nodeHash, basePath, urlResolver)
+            return Block(
+                runs = listOf(PartialRun(target)),
+                kind = BlockKind.PARTIAL,
+                indent = indentLevel(doc),
+            )
+        }
+        // Unclosed - deliberately falls through to ordinary text-line
+        // rendering (rather than upstream's own "produce nothing at all"
+        // for this case) so a live-preview editor doesn't lose the whole
+        // line's text while someone's mid-typing the closing brace. Same
+        // "never crash, render best-effort" posture already established
+        // for this library generally.
+    }
+
     // ---- Literal block start/end: standalone `= line ----
     // Exact match only (no leading/trailing whitespace tolerance, beyond
     // a trailing \r) — matches upstream's own `len(line) == 2 and line ==
