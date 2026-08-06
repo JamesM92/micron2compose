@@ -79,6 +79,21 @@ class MicronConverterTest {
         assertTrue(conv.convert(">").blocks.isEmpty())
     }
 
+    @Test
+    fun `heading line containing a field loses its heading status`() {
+        // A genuinely new find (verified against live upstream, not
+        // present in Micron2HTML/micron2kivy either): real NomadNet
+        // strips every leading `>` and treats the rest as an ordinary
+        // text line whenever a heading-shaped line also contains a form
+        // field - "Remove heading status from lines containing fields,"
+        // per its own source comment. Section depth is untouched.
+        val block = conv.convert(">>Username: `<20|username`>").blocks.single()
+        assertEquals(BlockKind.TEXT, block.kind)
+        assertEquals(0, block.indent)
+        assertTrue(block.plainText().startsWith("Username: "))
+        assertTrue(block.runs.filterIsInstance<FieldRun>().isNotEmpty())
+    }
+
     // -----------------------------------------------------------------
     // Dividers
     // -----------------------------------------------------------------
@@ -117,6 +132,18 @@ class MicronConverterTest {
         val block = conv.convert("=-").blocks.single()
         assertEquals(BlockKind.TEXT, block.kind)
         assertEquals("=-", block.plainText())
+    }
+
+    @Test
+    fun `leading whitespace before dash is not a divider`() {
+        // Matches upstream exactly: the divider check is a plain
+        // first-character check on the raw line, with zero leading-
+        // whitespace tolerance — a strict full-line-trim-then-match
+        // approach (this library's own earlier behavior) is more lenient
+        // than real NomadNet ever is.
+        val block = conv.convert("  -").blocks.single()
+        assertEquals(BlockKind.TEXT, block.kind)
+        assertEquals("  -", block.plainText())
     }
 
     // -----------------------------------------------------------------
@@ -662,6 +689,20 @@ class MicronConverterTest {
         // normally around it.
         val runs = conv.convert("`=`!not bold`=`!").blocks.single().runs.filterIsInstance<TextRun>()
         assertTrue(runs.any { it.text == "not bold" && it.bold })
+    }
+
+    @Test
+    fun `literal toggle requires an exact match, not just trimmed equality`() {
+        // Matches upstream's own `len(line) == 2 and line == "`="` exactly
+        // — a leading/trailing-space-tolerant match (this library's own
+        // earlier behavior) is more lenient than real NomadNet ever is.
+        // "`= " (trailing space) isn't an exact match, so it falls through
+        // to ordinary inline parsing — where a mid-line "`=" is just an
+        // unrecognized token, silently consumed (see the test above),
+        // leaving only the trailing space as visible text.
+        val block = conv.convert("`= ").blocks.single()
+        assertEquals(BlockKind.TEXT, block.kind)
+        assertEquals(" ", block.plainText())
     }
 
     @Test

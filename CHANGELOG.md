@@ -12,6 +12,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/), and this pro
 ### Fixed
 
 - **`isFileDownloadLink`/`isFileDownload` no longer false-positives on external `http(s)://` links that happen to contain `/file/` somewhere in their path** (e.g. a blog permalink) — NomadNet's `/file/` convention only ever applies to its own internal hash-addressed content, never to arbitrary external URLs. Found while adding `LinkKind` and reasoning through its classification order.
+- **Heading/divider/literal-block detection no longer tolerates leading whitespace it shouldn't.** Verified against `MicronParser.py`'s real `parse_line` directly: dividers and the literal-block toggle are plain first-character/exact-string checks on the (otherwise unmodified) raw line, not full-line-trimmed matches — `"  -"` and `` "`= " `` (trailing space) are now ordinary text, matching upstream, where this library previously treated them as a divider/literal-toggle.
+- **A heading-shaped line that also contains a form field now correctly loses its heading status**, matching upstream's own sanitization step ("remove heading status from lines containing fields") exactly — every leading `` > `` is stripped and the line renders as ordinary text (field included), with no section-depth change. Not previously ported to any of the three sibling libraries.
 
 ## [0.1.0] - 2026-08-06
 

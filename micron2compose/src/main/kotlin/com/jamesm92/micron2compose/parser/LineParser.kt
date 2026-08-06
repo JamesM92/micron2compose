@@ -77,7 +77,11 @@ internal fun computeNextHeadingMap(lines: List<String>): List<String?> {
     val seen = mutableSetOf<String>()
     for (k in 0 until n) {
         val raw = lines[k]
-        if (raw.startsWith(">")) {
+        // A heading-shaped line containing a field loses its heading
+        // status (see processLine's sanitization step) - must agree here
+        // too, or this pre-pass could claim a slug for a line that won't
+        // actually render as a heading at all.
+        if (raw.startsWith(">") && !raw.contains("`<")) {
             val (_, headingText) = splitHeading(raw)
             if (headingText.isNotEmpty()) {
                 val slug = slugifyMicron(headingText)
@@ -184,7 +188,7 @@ internal fun processLine(
 
     // ---- Inside a multi-line literal block ----
     if (doc.literal) {
-        if (line.trimEnd() == "`=") {
+        if (line.trimEnd('\r') == "`=") {
             doc.literal = false
             val content = doc.literalLines.joinToString("\n")
             doc.literalLines.clear()
@@ -198,9 +202,24 @@ internal fun processLine(
         return null
     }
 
+    // ---- Heading/field sanitization ----
+    // A line starting with `>` that *also* contains a form field loses its
+    // heading status entirely (matches real NomadNet's parse_line exactly,
+    // verified against live source — "Remove heading status from lines
+    // containing fields"): every leading `>` is stripped, and the rest
+    // falls through as an ordinary text line, with no section-depth
+    // change. Not ported to Micron2HTML/micron2kivy either — a genuinely
+    // new find, narrow enough (a heading-shaped line with an inline field
+    // on it) to be worth fixing directly rather than flagging only.
+    val workingLine = if (line.startsWith(">") && line.contains("`<")) {
+        line.trimStart('>')
+    } else {
+        line
+    }
+
     // ---- Comment / page-header lines (start with #) ----
-    if (line.startsWith("#")) {
-        val raw = line.trim()
+    if (workingLine.startsWith("#")) {
+        val raw = workingLine.trim()
         if (raw.startsWith("#!bg=")) {
             parseHeaderColor(raw.substring(5).trim())?.let { doc.docBg = it }
         } else if (raw.startsWith("#!fg=")) {
@@ -209,7 +228,7 @@ internal fun processLine(
         return null
     }
 
-    val stripped = line.trimEnd('\r')
+    val stripped = workingLine.trimEnd('\r')
 
     // ---- Table start: a line starting with `t, optionally followed by
     // an align char and/or a width (see parseTableToggle's docs for the
@@ -225,7 +244,11 @@ internal fun processLine(
     }
 
     // ---- Literal block start/end: standalone `= line ----
-    if (stripped.trim() == "`=") {
+    // Exact match only (no leading/trailing whitespace tolerance, beyond
+    // a trailing \r) — matches upstream's own `len(line) == 2 and line ==
+    // "`="` exactly; a real full-line regex/trim here would be more
+    // lenient than real NomadNet ever is.
+    if (stripped == "`=") {
         doc.literal = true
         doc.literalLines.clear()
         return null
@@ -238,8 +261,8 @@ internal fun processLine(
     }
 
     // ---- Section headings: line starts with one or more > ----
-    if (line.startsWith(">")) {
-        val (level, headingText) = splitHeading(line)
+    if (workingLine.startsWith(">")) {
+        val (level, headingText) = splitHeading(workingLine)
         doc.section = level
         if (headingText.isEmpty()) {
             // No row at all, not even blank space — section depth is still
@@ -261,26 +284,28 @@ internal fun processLine(
     }
 
     // ---- Dividers ----
-    // Only lines starting with `-` produce dividers. `=-`, `==`, `===` etc.
-    // fall through and render as regular text.
-    val s = line.trim()
-    if (s.isNotEmpty() && s[0] == '-') {
+    // Only a line starting with `-` at position 0 produces a divider — no
+    // leading-whitespace tolerance, matching upstream's own `first_char ==
+    // "-"` check on the (otherwise unmodified) raw line exactly. `=-`,
+    // `==`, `===` etc. fall through and render as regular text, as does
+    // "  -" (a `-` preceded by spaces).
+    if (stripped.isNotEmpty() && stripped[0] == '-') {
         val indent = indentLevel(doc)
         // A custom divider character only takes effect when the line is
         // *exactly* "-" + one more character — any other length falls back
         // to the default. A control character in that position also falls
         // back (matches current upstream NomadNet exactly).
-        val dividerChar = if (s.length == 2 && s[1].code >= 32) s[1] else '─'
+        val dividerChar = if (stripped.length == 2 && stripped[1].code >= 32) stripped[1] else '─'
         return Block(kind = BlockKind.DIVIDER, indent = indent, dividerChar = dividerChar)
     }
 
     // ---- Empty line ----
-    if (line.trim().isEmpty()) {
+    if (workingLine.trim().isEmpty()) {
         return Block(kind = BlockKind.BLANK)
     }
 
     // ---- Regular text line ----
-    val runs = parseInline(line, nodeHash, basePath, doc, urlResolver)
+    val runs = parseInline(workingLine, nodeHash, basePath, doc, urlResolver)
     return Block(
         runs = runs,
         kind = BlockKind.TEXT,
