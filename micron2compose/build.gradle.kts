@@ -62,7 +62,7 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "com.github.JamesM92"
             artifactId = "micron2compose"
-            version = project.findProperty("libVersion") as String? ?: "0.1.0"
+            version = project.findProperty("libVersion") as String? ?: "0.0.1"
 
             afterEvaluate {
                 from(components["release"])
