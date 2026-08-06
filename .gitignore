@@ -1,0 +1,30 @@
+## Gradle
+.gradle/
+build/
+micron2compose/build/
+out/
+
+## Local configuration
+local.properties
+
+## Android Studio / IntelliJ
+.idea/
+*.iml
+
+## Claude Code local session/tool-permission state (machine-specific)
+.claude/
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+
+## Keystores — never commit signing material
+*.jks
+*.keystore
+
+## OS cruft
+.DS_Store
+Thumbs.db
+
+## Logs
+*.log

@@ -1,0 +1,15 @@
+# Normalize to LF for all text files, regardless of platform/autocrlf
+# settings. Matters most for `gradlew`: a CRLF-mangled shebang script fails
+# outright when Git Bash/sh (or a Linux CI runner) tries to execute it.
+* text=auto eol=lf
+
+gradlew text eol=lf
+*.kts text eol=lf
+*.kt text eol=lf
+*.mu text eol=lf
+
+# Windows-only launcher — CRLF is correct/expected here.
+gradlew.bat text eol=crlf
+
+# Binary, never touch line endings.
+*.jar binary
