@@ -355,6 +355,7 @@ class MicronConverterTest {
             "`[Report`hash:/abcdef/file/report.pdf]"
         ).blocks.single().runs.filterIsInstance<LinkRun>().single()
         assertTrue(link.target.isFileDownload)
+        assertEquals(LinkKind.FILE_DOWNLOAD, link.target.kind)
         assertEquals("hash://abcdef/file/report.pdf", link.target.url)
     }
 
@@ -363,6 +364,7 @@ class MicronConverterTest {
         val link = conv.convert("`[About`/about.mu]", nodeHash = "deadbeef")
             .blocks.single().runs.filterIsInstance<LinkRun>().single()
         assertFalse(link.target.isFileDownload)
+        assertEquals(LinkKind.INTERNAL_PAGE, link.target.kind)
     }
 
     @Test
@@ -373,6 +375,34 @@ class MicronConverterTest {
             .filterIsInstance<LinkRun>().single()
         assertEquals("#", link.target.url)
         assertFalse(link.target.isFileDownload)
+        assertEquals(LinkKind.ANCHOR, link.target.kind)
+    }
+
+    @Test
+    fun `named anchor link is classified as ANCHOR`() {
+        val link = conv.convert("`[Jump`#install-notes]").blocks.single().runs
+            .filterIsInstance<LinkRun>().single()
+        assertEquals(LinkKind.ANCHOR, link.target.kind)
+    }
+
+    @Test
+    fun `http link is classified as EXTERNAL_WEB`() {
+        val link = conv.convert("`[Web`https://example.com]").blocks.single().runs
+            .filterIsInstance<LinkRun>().single()
+        assertEquals(LinkKind.EXTERNAL_WEB, link.target.kind)
+    }
+
+    @Test
+    fun `external web link containing slash-file-slash in its path is not misclassified as a file download`() {
+        // Regression: NomadNet's /file/ convention only applies to its own
+        // internal hash-addressed content. An ordinary external URL that
+        // happens to have "/file/" somewhere in its path (e.g. a blog
+        // permalink) is not a NomadNet file download and must not be
+        // flagged as one just because the raw substring matches.
+        val link = conv.convert("`[Post`https://example.com/file/2024/post]")
+            .blocks.single().runs.filterIsInstance<LinkRun>().single()
+        assertFalse(link.target.isFileDownload)
+        assertEquals(LinkKind.EXTERNAL_WEB, link.target.kind)
     }
 
     // -----------------------------------------------------------------

@@ -211,6 +211,8 @@ Links can also submit form-field data: `` `[Label`url`fields] ``, where `fields`
 
 A link pointing at NomadNet's `/file/` download-file convention sets `LinkTarget.isFileDownload = true`, with `url` still populated with the real resolved target (not blocked or altered) — the library doesn't decide what to do with a file link, it just tells you one is here. A host app wanting a download confirmation (filename/MIME/size) before following it checks this flag itself.
 
+`LinkTarget.kind` classifies every link into a `LinkKind` — `INTERNAL_PAGE`, `EXTERNAL_WEB`, `ANCHOR`, or `FILE_DOWNLOAD` — for exactly this kind of activation-safety branching (e.g. warn before leaving the mesh for `EXTERNAL_WEB`) without prefix-sniffing `url` yourself. `isFileDownload` is equivalent to `kind == LinkKind.FILE_DOWNLOAD`, kept as its own field for convenience.
+
 ### Anchors
 
 ```

@@ -141,13 +141,13 @@ internal fun parseInline(
                         }
                         if (url.isNotEmpty()) {
                             // `#`-prefixed URLs are page-local anchor jumps,
-                            // not resolved through the normal URL resolver
-                            // (and can never be a /file/ download link).
-                            val (href, isFileDownload) = when {
-                                url == "#" -> resolveBareHashLink(doc) to false
-                                url.startsWith("#") -> url to false
-                                else -> urlResolver(url, nodeHash, basePath) to isFileDownloadLink(url)
+                            // not resolved through the normal URL resolver.
+                            val href = when {
+                                url == "#" -> resolveBareHashLink(doc)
+                                url.startsWith("#") -> url
+                                else -> urlResolver(url, nodeHash, basePath)
                             }
+                            val kind = classifyLink(url, href)
                             val display = lbl.ifEmpty { url }
                             flush()
                             runs.add(
@@ -156,7 +156,8 @@ internal fun parseInline(
                                     target = LinkTarget(
                                         url = href,
                                         fieldSpec = fieldSpecRaw.ifEmpty { null },
-                                        isFileDownload = isFileDownload,
+                                        isFileDownload = kind == LinkKind.FILE_DOWNLOAD,
+                                        kind = kind,
                                     ),
                                 )
                             )
@@ -240,6 +241,7 @@ internal fun parseInline(
                                     isPartial = true,
                                     partialRefresh = refresh,
                                     partialPid = pid,
+                                    kind = classifyLink(dynUrl, href),
                                 )
                             )
                         )

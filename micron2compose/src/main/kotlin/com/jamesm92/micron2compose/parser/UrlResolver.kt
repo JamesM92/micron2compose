@@ -88,8 +88,34 @@ fun defaultUrlResolver(url: String, nodeHash: String, basePath: String): String 
  * an absolute `/file/x`) already contains the literal `/file/` segment as
  * written, before any resolution happens, so this works correctly
  * regardless of what resolver is configured.
+ *
+ * Explicitly excludes `http(s)://` URLs — the `/file/` convention is
+ * NomadNet's own internal-addressing scheme, not something that applies
+ * to arbitrary external web URLs. An ordinary external link that happens
+ * to have `/file/` somewhere in its path (e.g. a blog permalink) is not a
+ * NomadNet file download and shouldn't be flagged as one.
  */
-fun isFileDownloadLink(url: String): Boolean = url.contains("/file/")
+fun isFileDownloadLink(url: String): Boolean =
+    !url.startsWith("http://") && !url.startsWith("https://") && url.contains("/file/")
+
+/**
+ * Classifies a link for a host app's own activation-safety branching
+ * (nomadportal-android's specific need: e.g. warn before leaving the mesh
+ * for an external web link, vs. plain in-app navigation for an internal
+ * page) — see [LinkKind].
+ *
+ * Takes both the raw [url] and its resolved [href] because neither alone
+ * is enough: [url] is needed for the `/file/` and anchor checks (which
+ * must run before resolution — see [isFileDownloadLink]), but [href] is
+ * needed to detect `http(s)://` since a custom [UrlResolver] could map an
+ * internal reference to an external-looking URL or vice versa.
+ */
+fun classifyLink(url: String, href: String): LinkKind = when {
+    url == "#" || url.startsWith("#") -> LinkKind.ANCHOR
+    isFileDownloadLink(url) -> LinkKind.FILE_DOWNLOAD
+    href.startsWith("http://") || href.startsWith("https://") -> LinkKind.EXTERNAL_WEB
+    else -> LinkKind.INTERNAL_PAGE
+}
 
 // ---------------------------------------------------------------------------
 // Anchors

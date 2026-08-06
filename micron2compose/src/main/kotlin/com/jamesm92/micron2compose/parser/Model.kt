@@ -85,7 +85,32 @@ data class LinkTarget(
      * the information away entirely.
      */
     val isFileDownload: Boolean = false,
+    /**
+     * What kind of destination this is, for a host app's own link-
+     * activation-safety branching (e.g. warning before leaving the mesh
+     * for [EXTERNAL_WEB], vs. plain in-app navigation for
+     * [INTERNAL_PAGE]) without having to prefix-sniff [url] itself.
+     */
+    val kind: LinkKind = LinkKind.INTERNAL_PAGE,
 )
+
+/** See [LinkTarget.kind]. Computed by [classifyLink]. */
+enum class LinkKind {
+    /** A `hash://...` NomadNet page (or whatever a custom [UrlResolver] maps that to). */
+    INTERNAL_PAGE,
+    /** An `http://`/`https://` URL — leaves the NomadNet mesh entirely. */
+    EXTERNAL_WEB,
+    /**
+     * A `#`-prefixed same-page jump target — either a named
+     * `` `[label`#name] `` link or a bare `` `[label`#] `` "next heading"
+     * link (indistinguishable from each other once resolved, and neither
+     * needs different handling from a host app's perspective; a bare `#`
+     * with no following heading also falls in this bucket).
+     */
+    ANCHOR,
+    /** Points at NomadNet's `/file/` download-file convention (see [isFileDownloadLink]). */
+    FILE_DOWNLOAD,
+}
 
 enum class FieldType { TEXT, PASSWORD, CHECKBOX, RADIO }
 

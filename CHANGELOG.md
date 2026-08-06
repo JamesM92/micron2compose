@@ -3,6 +3,16 @@
 All notable changes to micron2compose are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `LinkTarget.kind: LinkKind` (`INTERNAL_PAGE`/`EXTERNAL_WEB`/`ANCHOR`/`FILE_DOWNLOAD`), so a host app's link-activation-safety branching (e.g. warn before an external web link) doesn't need to prefix-sniff `url` itself. `isFileDownload` is unchanged and now equivalent to `kind == LinkKind.FILE_DOWNLOAD`.
+
+### Fixed
+
+- **`isFileDownloadLink`/`isFileDownload` no longer false-positives on external `http(s)://` links that happen to contain `/file/` somewhere in their path** (e.g. a blog permalink) — NomadNet's `/file/` convention only ever applies to its own internal hash-addressed content, never to arbitrary external URLs. Found while adding `LinkKind` and reasoning through its classification order.
+
 ## [0.1.0] - 2026-08-06
 
 ### Added
