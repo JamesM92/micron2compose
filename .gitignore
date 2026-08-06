@@ -3,6 +3,7 @@
 build/
 micron2compose/build/
 out/
+.kotlin/
 
 ## Local configuration
 local.properties

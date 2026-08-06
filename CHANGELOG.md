@@ -3,6 +3,24 @@
 All notable changes to micron2compose are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `` `FT<6hex> ``/`` `BT<6hex> `` 24-bit color support, verified against live NomadNet source (`MicronParser.py`) rather than assumed absent — closes a gap the initial release deliberately left open pending verification.
+- Wide-character-aware table column widths (a built-in East Asian Width approximation covering the common CJK/Fullwidth Unicode ranges — no new runtime dependency).
+- `LinkTarget.isFileDownload`, matching the `LinkTarget.isPartial` pattern — see "Fixed" below.
+- `fontFamily`/`monospaceFontFamily` parameters on `MicronPage`/`MicronBlock`.
+
+### Changed
+
+- The table width-shrink algorithm now ports NomadNet's real formula (`RNS/Utilities/rngit/util.py`'s `format_table_raw` — sort columns widest-first, drain each to the minimum before moving on) instead of an approximation.
+- The `` `t `` table-toggle and its default alignment now match upstream's actual, more permissive behavior: any line starting with `` `t `` toggles table mode regardless of trailing content after the align/width suffix, and a table with no explicit align character inherits whatever alignment was already active instead of resetting to left.
+
+### Fixed
+
+- **`defaultUrlResolver` no longer collapses `/file/` download links to a bare `"#"`.** That was ambiguous with a `` `[label`#] `` "jump to next heading" link with no following heading (also `"#"`), and discarded the fact a file link was even there — blocking a real host-app need (confirming filename/size before download). `LinkTarget.isFileDownload` now carries that signal, with `url` still populated with the real resolved target. Found via real integration into `nomadportal-android`.
+
 ## [0.0.1] - 2026-08-06
 
 Initial release. Ports [Micron2HTML](https://github.com/JamesM92/Micron2HTML)'s parser to Kotlin (function-by-function, cross-checked against [micron2kivy](https://github.com/JamesM92/micron2kivy) and current upstream NomadNet source) and adds a Jetpack Compose emission layer on top.

@@ -19,51 +19,54 @@ private val HEX_CHARS = (('0'..'9') + ('a'..'f') + ('A'..'F')).toHashSet()
  * - `hash:/...` and `nomadnetwork://` URLs are canonicalized to
  *   `hash://<hash>/<path>`.
  * - Relative paths are resolved against ([nodeHash], [basePath]).
- * - `/file/` links are blocked (returns "#") — matches NomadNet's own
- *   download-file convention, which a renderer shouldn't silently follow
- *   as a plain page link.
  * - Empty/unknown returns "#".
  *
+ * This does **not** special-case NomadNet's `/file/` download-file
+ * convention — an earlier version collapsed those links to a bare "#",
+ * but that's exactly as ambiguous as it sounds: "#" is *also* the real
+ * href for a `` `[label`#] `` "jump to the next heading" link with no
+ * following heading, so a consuming app couldn't tell the two apart, and
+ * the fact a file link was even there got thrown away entirely — which
+ * blocks a real need (confirming filename/size before download) that
+ * only the host app can act on anyway. [LinkRun.target]'s
+ * [LinkTarget.isFileDownload] carries that signal now instead, same
+ * "expose the metadata, don't discard it" pattern already used for
+ * partials — see [isFileDownloadLink].
+ *
  * Ported from Micron2HTML/micron2kivy's `default_url_resolver` — same
- * algorithm, same edge cases (bare-hash `<hex>:/path` detection, blocked
- * paths checked before the scheme is finalized).
+ * algorithm and edge cases (bare-hash `<hex>:/path` detection), minus
+ * their `/file/`-blocking behavior for the reason above (a divergence
+ * worth backporting there too, but out of scope for this repo).
  */
 fun defaultUrlResolver(url: String, nodeHash: String, basePath: String): String {
     if (url.isEmpty()) return "#"
 
     if (url.startsWith("http://") || url.startsWith("https://")) return url
 
-    fun isBlocked(u: String) = u.contains("/file/")
-
     if (url.startsWith("nomadnetwork://")) {
-        val body = url.removePrefix("nomadnetwork://")
-        return if (isBlocked("/$body")) "#" else "hash://$body"
+        return "hash://${url.removePrefix("nomadnetwork://")}"
     }
 
-    if (url.startsWith("hash://")) {
-        return if (isBlocked(url)) "#" else url
-    }
+    if (url.startsWith("hash://")) return url
 
     if (url.startsWith("hash:/")) {
-        return if (isBlocked(url)) "#" else "hash://${url.removePrefix("hash:/")}"
+        return "hash://${url.removePrefix("hash:/")}"
     }
 
     // Bare-hash format: <hex>:/path, or :/path meaning "this node".
     val colonSlash = url.indexOf(":/")
     if (colonSlash == 0 && nodeHash.isNotEmpty()) {
-        val pathPart = url.substring(1)
-        return if (isBlocked(pathPart)) "#" else "hash://$nodeHash$pathPart"
+        return "hash://$nodeHash${url.substring(1)}"
     }
     if (colonSlash > 0) {
         val candidate = url.substring(0, colonSlash)
         if (candidate.length in 8..64 && candidate.all { it in HEX_CHARS }) {
-            val full = "hash://$candidate${url.substring(colonSlash + 1)}"
-            return if (isBlocked(full)) "#" else full
+            return "hash://$candidate${url.substring(colonSlash + 1)}"
         }
     }
 
     if (url.startsWith("/") && nodeHash.isNotEmpty()) {
-        return if (isBlocked(url)) "#" else "hash://$nodeHash$url"
+        return "hash://$nodeHash$url"
     }
 
     if (nodeHash.isNotEmpty() && url.isNotEmpty()) {
@@ -73,6 +76,20 @@ fun defaultUrlResolver(url: String, nodeHash: String, basePath: String): String 
 
     return "#"
 }
+
+/**
+ * Whether a raw (pre-resolution) Micron link URL points at NomadNet's
+ * `/file/` download-file convention.
+ *
+ * Deliberately checked on the *raw* url exactly as the page author wrote
+ * it, not on whatever a (possibly custom, possibly app-specific-scheme)
+ * [UrlResolver] produces from it — every real form of a file link
+ * (`hash://.../file/x`, `hash:/.../file/x`, a bare-hash `<hex>:/file/x`,
+ * an absolute `/file/x`) already contains the literal `/file/` segment as
+ * written, before any resolution happens, so this works correctly
+ * regardless of what resolver is configured.
+ */
+fun isFileDownloadLink(url: String): Boolean = url.contains("/file/")
 
 // ---------------------------------------------------------------------------
 // Anchors

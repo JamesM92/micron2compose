@@ -72,6 +72,19 @@ data class LinkTarget(
     /** Seconds between re-fetches; null/absent means refresh is disabled. */
     val partialRefresh: Double? = null,
     val partialPid: String? = null,
+    /**
+     * Whether this link points at NomadNet's `/file/` download-file
+     * convention (see [isFileDownloadLink]). [url] is still the real
+     * resolved destination either way — this library doesn't decide what
+     * to do with a file link (block it, confirm it, follow it silently),
+     * it just tells a host app one is here. A host app wanting a
+     * download confirmation (filename/MIME/size) before following it
+     * should check this flag itself; earlier versions of this library
+     * collapsed file links to a bare "#" instead, which is exactly as
+     * ambiguous as it sounds (see [defaultUrlResolver]'s docs) and threw
+     * the information away entirely.
+     */
+    val isFileDownload: Boolean = false,
 )
 
 enum class FieldType { TEXT, PASSWORD, CHECKBOX, RADIO }

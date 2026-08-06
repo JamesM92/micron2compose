@@ -199,13 +199,38 @@ class MicronConverterTest {
     }
 
     @Test
-    fun `T format 24-bit color is not supported`() {
-        // NomadNet's reference parser accepts `FT<6hex>`, but its own Guide
-        // never teaches it — deliberately staying 3-hex-only. The `T` plus
-        // next 2 chars are consumed as a failed 3-char hex attempt.
-        val block = conv.convert("`FT8b4513 brown`f").blocks.single()
-        assertTrue(block.plainText().contains("brown"))
-        assertNull(block.runs.filterIsInstance<TextRun>().first { it.text.contains("brown") }.fgColor)
+    fun `T format sets a 24-bit color directly`() {
+        // Verified against live NomadNet source (MicronParser.py's real
+        // `elif c == "F":` branch) — the FT/BT 6-hex form is real and
+        // supported, not a Guide-only omission to skip.
+        val run = conv.convert("`FT8b4513 brown`f").blocks.single().runs
+            .filterIsInstance<TextRun>().first { it.text.contains("brown") }
+        assertEquals("#8b4513", run.fgColor)
+    }
+
+    @Test
+    fun `T format falls back to 3-hex attempt when too short for 6 hex digits`() {
+        // Matches upstream exactly: `T` is present but there isn't room for
+        // 6 more hex digits after it, so it falls back to treating `T` plus
+        // the next 2 chars as a (near-certainly invalid) 3-hex attempt
+        // rather than backtracking.
+        val block = conv.convert("`FT8b").blocks.single()
+        assertTrue(block.plainText().isEmpty())
+        assertTrue(block.runs.filterIsInstance<TextRun>().none { it.fgColor != null })
+    }
+
+    @Test
+    fun `T format with invalid hex digits applies no color`() {
+        val run = conv.convert("`FTzzzzzz brown`f").blocks.single().runs
+            .filterIsInstance<TextRun>().first { it.text.contains("brown") }
+        assertNull(run.fgColor)
+    }
+
+    @Test
+    fun `T format works for background too`() {
+        val run = conv.convert("`BT1a2b3c dark`b").blocks.single().runs
+            .filterIsInstance<TextRun>().first { it.text.contains("dark") }
+        assertEquals("#1a2b3c", run.bgColor)
     }
 
     @Test
@@ -317,6 +342,37 @@ class MicronConverterTest {
             "`[Go`:/page/x.mu`a=1`b=2`c=3]", nodeHash = "deadbeef"
         ).blocks.single()
         assertTrue(block.runs.filterIsInstance<LinkRun>().isEmpty())
+    }
+
+    @Test
+    fun `file download link is flagged but still resolves to its real url`() {
+        // Regression: an earlier version collapsed /file/ links to a bare
+        // "#", indistinguishable from a "jump to next heading, but there
+        // wasn't one" link, and threw away the fact a file link was even
+        // there. A host app needs the real target to show a download
+        // confirmation (filename/MIME) before following it.
+        val link = conv.convert(
+            "`[Report`hash:/abcdef/file/report.pdf]"
+        ).blocks.single().runs.filterIsInstance<LinkRun>().single()
+        assertTrue(link.target.isFileDownload)
+        assertEquals("hash://abcdef/file/report.pdf", link.target.url)
+    }
+
+    @Test
+    fun `non-file link is not flagged as a file download`() {
+        val link = conv.convert("`[About`/about.mu]", nodeHash = "deadbeef")
+            .blocks.single().runs.filterIsInstance<LinkRun>().single()
+        assertFalse(link.target.isFileDownload)
+    }
+
+    @Test
+    fun `bare hash next-heading link is never flagged as a file download`() {
+        // The exact ambiguity being fixed: both this and a blocked file
+        // link used to resolve to "#" with no way to tell them apart.
+        val link = conv.convert("`[Continue`#]\ntext").blocks[0].runs
+            .filterIsInstance<LinkRun>().single()
+        assertEquals("#", link.target.url)
+        assertFalse(link.target.isFileDownload)
     }
 
     // -----------------------------------------------------------------
@@ -450,6 +506,49 @@ class MicronConverterTest {
         val out = conv.convert("`tc\n| A | B |\n| --- | --- |\n| 1 | 2 |\n`t\nafter")
         assertEquals(Align.CENTER, out.blocks[0].align)
         assertEquals(Align.LEFT, out.blocks[1].align)
+    }
+
+    @Test
+    fun `table with no explicit align inherits the currently active alignment`() {
+        // Matches upstream: format_table_raw only emits an align wrapper
+        // when one was actually specified via `t[lcr] — otherwise the
+        // table renders under whatever alignment was already active, not a
+        // hard reset to left.
+        val out = conv.convert("`c\n`t\n| A | B |\n| --- | --- |\n| 1 | 2 |\n`t")
+        assertEquals(Align.CENTER, out.blocks.single { it.kind == BlockKind.TABLE }.align)
+    }
+
+    @Test
+    fun `table toggle is permissive about trailing garbage after the align char`() {
+        // Matches upstream's own `line.startswith("`t")` + best-effort
+        // parse: anything unparseable after `t is silently ignored rather
+        // than rejecting the whole line as "not a table toggle".
+        val block = conv.convert("`t garbage\n| A | B |\n| --- | --- |\n| 1 | 2 |\n`t").blocks.single()
+        assertEquals(BlockKind.TABLE, block.kind)
+    }
+
+    @Test
+    fun `table width shrink drains the widest column first, not one char at a time`() {
+        // Locks in upstream's real algorithm (sort widest-first, drain each
+        // to TABLE_MIN_COL_WIDTH before moving on) rather than the
+        // "shrink the single widest by 1 repeatedly" approximation this
+        // library shipped with before finding upstream's actual source.
+        val block = conv.convert(
+            "`t15\n| VeryLongHeader | AnotherVeryLongOne |\n| --- | --- |\n" +
+                "| xxxxxxxxxxxxxxxxxxxx | yyyyyyyyyyyyyyyyyyyy |\n`t"
+        ).blocks.single()
+        // col0 (20 wide) drains to the 3-char minimum first; only the
+        // leftover excess reduces col1 (20 -> 5).
+        assertTrue(block.plainText().contains("│ xxx │ yyyyy │"))
+    }
+
+    @Test
+    fun `wide CJK characters count as two columns for table width`() {
+        val block = conv.convert("`t\n| Name | Val |\n| --- | --- |\n| 中文字 | 1 |\n`t").blocks.single()
+        // "中文字" is 3 wide characters = 6 display columns, so the Name
+        // column pads to 6 wide (plus its 1-space margins each side) —
+        // a naive char-count implementation would only reserve 3.
+        assertTrue(block.plainText().contains("│ 中文字 │"))
     }
 
     @Test

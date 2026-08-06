@@ -55,9 +55,25 @@ fun PageScreen(result: ConvertResult) {
     MicronPage(
         result = result,
         readOnly = false, // false = interactive form fields; true = disabled
-        onLinkClick = { target -> /* navigate, using target.url */ },
+        onLinkClick = { target ->
+            if (target.isFileDownload) {
+                // show a filename/size confirmation before following target.url
+            } else {
+                // navigate, using target.url
+            }
+        },
     )
 }
+```
+
+`MicronPage`/`MicronBlock` also take `fontFamily` (regular text) and `monospaceFontFamily` (tables, literal blocks, and dividers — anything built from box-drawing/Braille characters, where a generic system monospace font often doesn't have full glyph coverage and misaligns) if your app bundles its own fonts:
+
+```kotlin
+MicronPage(
+    result = result,
+    fontFamily = MyAppFonts.body,
+    monospaceFontFamily = MyAppFonts.robotoMonoNerd,
+)
 ```
 
 `convert()` returns a `ConvertResult` — a Compose-independent intermediate representation, not a bare string:
@@ -160,13 +176,17 @@ A custom divider character only takes effect when the line is *exactly* two char
 `_text`_      Underline
 
 `Fxxx         Set foreground color (3-hex shorthand — `FF40 → #ff4400)
+`FTrrggbb     Set foreground color (24-bit — `FT8b4513 → #8b4513)
 `f            Reset foreground color
 
 `Bxxx         Set background color (3-hex shorthand)
+`BTrrggbb     Set background color (24-bit)
 `b            Reset background color
 
 ``            Reset ALL inline formatting (bold, italic, underline, colors, alignment)
 ```
+
+Both forms are real (verified against live NomadNet source, not just its Guide) — the 24-bit `T`-prefixed form only takes effect when there's room for the full 6 hex digits after the `T`; otherwise it falls back to treating `T` plus the next 2 characters as a 3-hex attempt, matching NomadNet exactly. Note this differs from the `#!fg=`/`#!bg=` page headers above, which stay 3-hex-only — see that section for why.
 
 ### Alignment
 
@@ -188,6 +208,8 @@ Alignment persists across lines until changed — it's document-level state, not
 ```
 
 Links can also submit form-field data: `` `[Label`url`fields] ``, where `fields` is pipe-separated (`*` for every field, specific field names, or `key=value` pairs). This rides on `LinkTarget.fieldSpec` for your app to read. A link with more than 3 backtick-separated components renders nothing at all, matching NomadNet exactly.
+
+A link pointing at NomadNet's `/file/` download-file convention sets `LinkTarget.isFileDownload = true`, with `url` still populated with the real resolved target (not blocked or altered) — the library doesn't decide what to do with a file link, it just tells you one is here. A host app wanting a download confirmation (filename/MIME/size) before following it checks this flag itself.
 
 ### Anchors
 
@@ -249,14 +271,18 @@ The backtick before the closing `>` is mandatory for every field type — `` `<?
 
 ## Known limitations
 
+This library's stated goal is full parity with the real NomadNet viewer — the items below are open gaps toward that, not a permanent ceiling.
+
 - **Partials render as a static, clickable placeholder only** — no automatic live re-fetching (the metadata is exposed on `LinkTarget` for a host app to build that on top). See [Partials](#partials).
-- **Table column widths use `.length`, not a wide-character-aware measurement** — a table with double-width (e.g. CJK) characters in cells may not align columns as precisely as real NomadNet would. Same documented simplification as the HTML/Kivy siblings.
-- **The table width-shrink algorithm is a faithful-effort approximation**, not a byte-for-byte port of NomadNet's exact formula (which isn't fully specified in the reference source) — it greedily shrinks the single widest column by one character at a time until the table fits.
+- **Table wide-character width uses a built-in East Asian Width approximation, not a full `wcwidth` port** — the common CJK/Fullwidth Unicode ranges are measured as double-width, matching real NomadNet's own `wcwidth`-based measurement for the vast majority of real content, but "Ambiguous"-width characters and some rarer combining-mark cases aren't specially handled.
+- **The table width-shrink algorithm is ported from NomadNet's real implementation** (`RNS/Utilities/rngit/util.py`'s `format_table_raw`, fetched and verified against live upstream source — not approximated): sort columns widest-first, drain each down to the 3-character minimum before moving to the next, until the table fits.
 - **Dividers render at a fixed repeated-character width** clipped to the available layout width, rather than anything terminal-width-aware — there's no meaningful "terminal width" concept in a Compose layout.
 
 ## Security
 
 Every `.mu` document is treated as untrusted remote content. No Micron construct has an execution path, and none ever will — the parser only ever produces plain Kotlin data (`Block`/`InlineRun` values), never anything reflective, evaluated, or otherwise executable. Malformed input never throws: `convert()`/`convertInline()` fall back to a single plain-text block on any unexpected failure rather than crashing — this doubles as what a live-preview page editor needs from its renderer.
+
+The default URL resolver only ever emits `http(s)://`, `hash://`, or `#` — but a consuming app still shouldn't blindly hand a resolved URL to something like `Intent.ACTION_VIEW` without its own scheme allow-list. It does **not** block NomadNet's `/file/` download-file convention (an earlier version did, by collapsing those links to a bare `#` — which is exactly as ambiguous as it sounds, since `#` is also the real href for a "jump to the next heading" link with no following heading, and it threw away the fact a file link was even there). `LinkTarget.isFileDownload` carries that signal instead, with `url` still populated with the real target — see [Links](#links).
 
 The default URL resolver blocks NomadNet's `/file/` download-file convention (returns `#`) and only ever emits `http(s)://`, `hash://`, or `#` — but a consuming app still shouldn't blindly hand a resolved URL to something like `Intent.ACTION_VIEW` without its own scheme allow-list.
 

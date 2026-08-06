@@ -38,6 +38,13 @@ import com.jamesm92.micron2compose.parser.LinkTarget
  *   [com.jamesm92.micron2compose.parser.MicronConverter]'s docs on why).
  * @param scrollToAnchor When set to a name present in [ConvertResult.anchors],
  *   scrolls to that block. Changing this value re-triggers the scroll.
+ * @param fontFamily Font for regular text/heading blocks. Defaults to
+ *   whatever the surrounding theme already provides.
+ * @param monospaceFontFamily Font for TABLE/LITERAL blocks and dividers —
+ *   anything built from repeated box-drawing/Braille characters, where a
+ *   real monospace face (ideally one with full Braille/box-drawing glyph
+ *   coverage — a generic system monospace font often doesn't have one)
+ *   matters for correct alignment. Defaults to [FontFamily.Monospace].
  * @param onLinkClick Invoked with the resolved [LinkTarget] whenever a link
  *   or partial placeholder is tapped.
  */
@@ -50,6 +57,8 @@ fun MicronPage(
     scrollToAnchor: String? = null,
     listState: LazyListState = rememberLazyListState(),
     blankLineHeight: Dp = 16.dp,
+    fontFamily: FontFamily = FontFamily.Default,
+    monospaceFontFamily: FontFamily = FontFamily.Monospace,
     onLinkClick: (LinkTarget) -> Unit = {},
 ) {
     LaunchedEffect(scrollToAnchor, result) {
@@ -66,6 +75,8 @@ fun MicronPage(
                 formState = formState,
                 readOnly = readOnly,
                 blankLineHeight = blankLineHeight,
+                fontFamily = fontFamily,
+                monospaceFontFamily = monospaceFontFamily,
                 onLinkClick = onLinkClick,
             )
         }
@@ -77,6 +88,8 @@ fun MicronPage(
  * item, exposed directly for callers who want their own layout container
  * instead of a `LazyColumn` (e.g. mixing Micron blocks into a larger
  * `Column` alongside other app UI).
+ *
+ * See [MicronPage]'s docs for [fontFamily]/[monospaceFontFamily].
  */
 @Composable
 fun MicronBlock(
@@ -85,6 +98,8 @@ fun MicronBlock(
     formState: MicronFormState = rememberDefaultMicronFormState(),
     readOnly: Boolean = false,
     blankLineHeight: Dp = 16.dp,
+    fontFamily: FontFamily = FontFamily.Default,
+    monospaceFontFamily: FontFamily = FontFamily.Monospace,
     onLinkClick: (LinkTarget) -> Unit = {},
 ) {
     if (block.kind == BlockKind.BLANK) {
@@ -106,7 +121,7 @@ fun MicronBlock(
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Clip,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = monospaceFontFamily,
             modifier = modifier.fillMaxWidth().padding(start = indentPadding),
         )
         return
@@ -119,7 +134,7 @@ fun MicronBlock(
         text = content.annotatedString,
         inlineContent = content.inlineContent,
         modifier = modifier.fillMaxWidth().padding(start = indentPadding),
-        fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default,
+        fontFamily = if (monospace) monospaceFontFamily else fontFamily,
         fontWeight = if (block.kind == BlockKind.HEADING) FontWeight.Bold else null,
         fontSize = headingFontSize(block.headingLevel),
         textAlign = block.align.toTextAlign(),

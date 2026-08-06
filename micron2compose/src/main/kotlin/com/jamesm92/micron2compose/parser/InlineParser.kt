@@ -141,18 +141,23 @@ internal fun parseInline(
                         }
                         if (url.isNotEmpty()) {
                             // `#`-prefixed URLs are page-local anchor jumps,
-                            // not resolved through the normal URL resolver.
-                            val href = when {
-                                url == "#" -> resolveBareHashLink(doc)
-                                url.startsWith("#") -> url
-                                else -> urlResolver(url, nodeHash, basePath)
+                            // not resolved through the normal URL resolver
+                            // (and can never be a /file/ download link).
+                            val (href, isFileDownload) = when {
+                                url == "#" -> resolveBareHashLink(doc) to false
+                                url.startsWith("#") -> url to false
+                                else -> urlResolver(url, nodeHash, basePath) to isFileDownloadLink(url)
                             }
                             val display = lbl.ifEmpty { url }
                             flush()
                             runs.add(
                                 LinkRun(
                                     label = display,
-                                    target = LinkTarget(url = href, fieldSpec = fieldSpecRaw.ifEmpty { null }),
+                                    target = LinkTarget(
+                                        url = href,
+                                        fieldSpec = fieldSpecRaw.ifEmpty { null },
+                                        isFileDownload = isFileDownload,
+                                    ),
                                 )
                             )
                         }
@@ -266,28 +271,49 @@ internal fun parseInline(
 /**
  * Parse a Micron color token after the F/B prefix.
  *
- * Format: 3 hex chars, each nibble doubled (f -> ff, 8 -> 88, 0 -> 00).
- * Always consumes the next 3 chars after F/B (if available), regardless of
- * whether they're valid hex — if invalid, no color is applied but the 3
- * chars are still consumed so they don't leak as text. Matches NomadNet's
- * reference parser and Micron2HTML/micron2kivy exactly.
+ * Two forms, both ported from NomadNet's own `MicronParser.py` (fetched
+ * and read directly, not paraphrased — the reference `elif c == "F":`/
+ * `elif c == "B":` branches):
+ *  - `FT<6hex>` / `BT<6hex>` — 24-bit extended form, only takes effect
+ *    when there's room for the full 6 hex digits after the `T`.
+ *  - `Fxxx` / `Bxxx` — 3-hex shorthand, each nibble doubled (f -> ff,
+ *    8 -> 88, 0 -> 00). Also the fallback when a `T` is present but there
+ *    isn't room for 6 more hex digits after it — matches upstream's own
+ *    fallback exactly: `T` plus the next 2 characters get consumed as a
+ *    (near-certainly invalid) 3-hex attempt rather than backtracking.
  *
- * Deliberately 3-hex-only: NomadNet's reference parser also accepts an
- * `FT<6hex>` 24-bit form, but its own Guide never teaches it to page
- * authors and no real client renders it — see [UrlResolver.kt]'s sibling
- * rationale for `#!fg=`/`#!bg=` headers, same reasoning here.
+ * Always consumes the appropriate number of characters when there's room
+ * for the attempt at all (3 for the short form, 7 for `T` + 6 hex),
+ * regardless of whether they're valid hex, so they never leak as visible
+ * text either way.
+ *
+ * One deliberate deviation from upstream: real NomadNet doesn't validate
+ * hex digits at all here — it stores whatever substring it finds directly
+ * as color state, leaving any garbage to whatever downstream rendering
+ * does with it. Building a Compose `Color` from an invalid hex string
+ * would throw, which this library's "never crash on malformed input"
+ * requirement doesn't allow — so both forms here validate all digits are
+ * hex before applying a color, matching Micron2HTML/micron2kivy's own
+ * same safety-motivated choice for the 3-hex form.
  *
  * Returns (color, newIndex).
  */
 private fun parseColor(text: String, i: Int, n: Int): Pair<String?, Int> {
-    if (i + 3 <= n) {
-        val h3 = text.substring(i, i + 3)
-        if (h3.all { it in HEX_DIGITS }) {
-            return "#" + h3.toCharArray().joinToString("") { "$it$it" }.lowercase() to i + 3
+    if (i + 3 > n) return null to i
+
+    if (text[i] == 'T' && i + 7 <= n) {
+        val h6 = text.substring(i + 1, i + 7)
+        if (h6.all { it in HEX_DIGITS }) {
+            return "#" + h6.lowercase() to i + 7
         }
-        return null to i + 3
+        return null to i + 7
     }
-    return null to i
+
+    val h3 = text.substring(i, i + 3)
+    if (h3.all { it in HEX_DIGITS }) {
+        return "#" + h3.toCharArray().joinToString("") { "$it$it" }.lowercase() to i + 3
+    }
+    return null to i + 3
 }
 
 /**

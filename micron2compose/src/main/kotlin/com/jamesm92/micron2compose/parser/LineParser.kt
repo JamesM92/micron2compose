@@ -120,7 +120,30 @@ private fun parseHeaderColor(value: String): String? {
     return null
 }
 
-private val TABLE_TOGGLE_RE = Regex("`t([lcr]?)(\\d*)")
+/**
+ * Parses a `` `t ``-prefixed line's optional `[align-char][width]` suffix.
+ * Matches NomadNet's own permissive check exactly (`MicronParser.py`'s
+ * `parse_line`, read directly from live upstream, not paraphrased):
+ * `line.startswith("`t")` — a plain prefix check at position 0, nothing
+ * trimmed first — followed by opportunistically consuming an align char
+ * and then attempting to parse whatever's left as a width, silently
+ * ignoring anything unparseable rather than rejecting the whole line as
+ * "not a table toggle" the way a strict full-line regex would. E.g.
+ * `` `t garbage `` still toggles table mode (align/width both default).
+ *
+ * Returns (alignChar, maxWidthOrNull), or null if the line doesn't start
+ * with `` `t `` at all.
+ */
+private fun parseTableToggle(line: String): Pair<String, Int?>? {
+    if (!line.startsWith("`t")) return null
+    var rest = line.substring(2)
+    val alignChar = if (rest.isNotEmpty() && rest[0] in "lcr") {
+        rest[0].toString().also { rest = rest.substring(1) }
+    } else {
+        ""
+    }
+    return alignChar to rest.trim().toIntOrNull()
+}
 
 /**
  * The document-level line/state machine: `#!bg=`/`#!fg=` headers, `>`
@@ -145,7 +168,7 @@ internal fun processLine(
     // entered from the plain fallthrough path below), so this can safely
     // come first.
     if (doc.tableMode) {
-        if (TABLE_TOGGLE_RE.matchEntire(line.trimEnd('\r').trim()) != null) {
+        if (line.startsWith("`t")) {
             doc.tableMode = false
             val rawLines = doc.tableLines.toList()
             val align = doc.tableAlign
@@ -188,13 +211,16 @@ internal fun processLine(
 
     val stripped = line.trimEnd('\r')
 
-    // ---- Table start: standalone `t[align][width] line ----
-    val tableMatch = TABLE_TOGGLE_RE.matchEntire(stripped.trim())
-    if (tableMatch != null) {
+    // ---- Table start: a line starting with `t, optionally followed by
+    // an align char and/or a width (see parseTableToggle's docs for the
+    // exact, deliberately-permissive matching rule) ----
+    val tableToggle = parseTableToggle(stripped)
+    if (tableToggle != null) {
+        val (alignChar, maxWidth) = tableToggle
         doc.tableMode = true
         doc.tableLines.clear()
-        doc.tableAlign = tableMatch.groupValues[1]
-        doc.tableMaxWidth = tableMatch.groupValues[2].toIntOrNull() ?: 100
+        doc.tableAlign = alignChar
+        doc.tableMaxWidth = maxWidth ?: 100
         return null
     }
 
