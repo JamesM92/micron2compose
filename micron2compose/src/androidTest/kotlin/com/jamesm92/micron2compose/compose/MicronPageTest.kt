@@ -1,16 +1,17 @@
 package com.jamesm92.micron2compose.compose
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onFirst
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.test.platform.app.InstrumentationRegistry
 import com.jamesm92.micron2compose.parser.LinkTarget
 import com.jamesm92.micron2compose.parser.MicronConverter
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -42,9 +43,20 @@ class MicronPageTest {
         }
     }
 
+    /**
+     * `src/test/resources` (used by the plain-JUnit parser tests) isn't
+     * packaged into the instrumented test APK at all — on-device tests
+     * read fixtures from `src/androidTest/assets` via the instrumentation
+     * context's `AssetManager` instead.
+     */
+    private fun readAsset(name: String): String {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        return context.assets.open(name).bufferedReader().use { it.readText() }
+    }
+
     @Test
     fun showcaseFixtureRendersWithoutThrowing() {
-        val fixture = File("src/test/resources/fixtures/showcase.mu").readText()
+        val fixture = readAsset("showcase.mu")
         val result = MicronConverter().convert(fixture)
 
         composeTestRule.setContent {
@@ -56,19 +68,29 @@ class MicronPageTest {
 
     @Test
     fun malformedInputCorpusRendersWithoutThrowing() {
+        // One setContent call for the whole corpus — the Compose test rule
+        // only allows setContent once per test. Composing every adversarial
+        // input's blocks in a single Column still proves the "never throws"
+        // guarantee across all of them: any exception during composition
+        // fails the test.
         val adversarial = listOf(
             "`", "``", "`[", "`[a`b`c`d`e]", "`<", "`<|", "`{", "`:", "`F", "`Fa",
             "\\", "`t\n`t\n`t", "-".repeat(500), "`!".repeat(500),
         )
         val converter = MicronConverter()
+        val results = adversarial.map { converter.convert(it) }
 
-        for (input in adversarial) {
-            val result = converter.convert(input)
-            composeTestRule.setContent {
-                MicronPage(result = result)
+        composeTestRule.setContent {
+            Column {
+                for (result in results) {
+                    for (block in result.blocks) {
+                        MicronBlock(block = block)
+                    }
+                }
             }
-            composeTestRule.waitForIdle()
         }
+
+        composeTestRule.waitForIdle()
     }
 
     @Test
@@ -81,7 +103,17 @@ class MicronPageTest {
             MicronPage(result = result, onLinkClick = { clicked = it })
         }
 
-        composeTestRule.onNodeWithText("Click here").performClick()
+        // Not onNodeWithText().performClick(): the outer Text node spans the
+        // full fillMaxWidth() row, but the actual link only occupies the
+        // glyph width of its own label as a distinct child semantics node
+        // (Compose exposes each LinkAnnotation as its own accessibility
+        // node, with its own OnClick action and its own, smaller, bounds -
+        // confirmed by dumping the tree via onRoot().printToLog() against a
+        // real device this library was verified on). Clicking the outer
+        // node's center can land past the link's actual glyphs entirely
+        // when the surrounding text is short; querying by click action
+        // finds the link's own node directly, with its own correct bounds.
+        composeTestRule.onAllNodes(hasClickAction(), useUnmergedTree = true).onFirst().performClick()
         composeTestRule.waitForIdle()
 
         assertEquals("https://example.com", clicked?.url)
