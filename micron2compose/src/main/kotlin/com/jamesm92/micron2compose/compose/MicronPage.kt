@@ -1,5 +1,6 @@
 package com.jamesm92.micron2compose.compose
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -12,13 +13,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.jamesm92.micron2compose.parser.Align
 import com.jamesm92.micron2compose.parser.Block
 import com.jamesm92.micron2compose.parser.BlockKind
@@ -159,23 +159,46 @@ fun MicronBlock(
     // PartialRun handling).
     val content = rememberMicronBlockContent(block, readOnly, formState, onLinkClick)
     val monospace = block.kind == BlockKind.TABLE || block.kind == BlockKind.LITERAL
+    val headingBg = if (block.kind == BlockKind.HEADING) headingBackground(block.headingLevel) else null
+    val headingFg = if (block.kind == BlockKind.HEADING) headingForeground(block.headingLevel) else null
 
     Text(
         text = content.annotatedString,
         inlineContent = content.inlineContent,
-        modifier = modifier.fillMaxWidth().padding(start = indentPadding),
+        modifier = modifier
+            .fillMaxWidth()
+            .let { if (headingBg != null) it.background(headingBg) else it }
+            .padding(start = indentPadding),
+        color = headingFg ?: Color.Unspecified,
         fontFamily = if (monospace) monospaceFontFamily else fontFamily,
-        fontWeight = if (block.kind == BlockKind.HEADING) FontWeight.Bold else null,
-        fontSize = headingFontSize(block.headingLevel),
         textAlign = block.align.toTextAlign(),
     )
 }
 
-private fun headingFontSize(level: Int) = when (level) {
-    1 -> 24.sp
-    2 -> 20.sp
-    3 -> 18.sp
-    else -> androidx.compose.ui.unit.TextUnit.Unspecified
+/**
+ * Heading foreground/background color bands, ported directly from real
+ * NomadNet's own default dark theme (`MicronParser.py`'s `STYLES_DARK`,
+ * verified against live upstream). Real Micron headings are **not** bold
+ * and **not** a different font size — a terminal UI has no font-size
+ * concept at all — just a distinct fg/bg color pair per level, applied to
+ * the whole row (matching Micron2HTML's own equivalent: "bg extends to
+ * the container's left edge for all levels, text tabbed inward"). Levels
+ * beyond 3 have no defined style in upstream either, so they render as
+ * plain text here too, consistent with headingLevel always carrying the
+ * real depth and a consumer deciding for itself how to style level 4+.
+ */
+private fun headingForeground(level: Int): Color? = when (level) {
+    1 -> Color(0xFF222222)
+    2 -> Color(0xFF111111)
+    3 -> Color(0xFF000000)
+    else -> null
+}
+
+private fun headingBackground(level: Int): Color? = when (level) {
+    1 -> Color(0xFFBBBBBB)
+    2 -> Color(0xFF999999)
+    3 -> Color(0xFF777777)
+    else -> null
 }
 
 private fun Align.toTextAlign(): TextAlign = when (this) {
